@@ -70,6 +70,10 @@ export default function Home() {
   const [subject, setSubject] = useState("");
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingSubject, setEditingSubject] = useState("");
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingDueDate, setEditingDueDate] = useState("");
   const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isStorageAvailable, setIsStorageAvailable] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -183,8 +187,53 @@ export default function Home() {
     );
   }
 
+  function startEditingTask(task: Task) {
+    setEditingTaskId(task.id);
+    setEditingSubject(task.subject);
+    setEditingTitle(task.title);
+    setEditingDueDate(task.dueDate);
+  }
+
+  function cancelEditingTask() {
+    setEditingTaskId(null);
+    setEditingSubject("");
+    setEditingTitle("");
+    setEditingDueDate("");
+  }
+
+  function saveTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (
+      editingTaskId === null ||
+      !editingSubject.trim() ||
+      !editingTitle.trim() ||
+      !editingDueDate
+    ) {
+      return;
+    }
+
+    setTasks((currentTasks) =>
+      currentTasks.map((task) =>
+        task.id === editingTaskId
+          ? {
+              ...task,
+              subject: editingSubject.trim(),
+              title: editingTitle.trim(),
+              dueDate: editingDueDate,
+            }
+          : task,
+      ),
+    );
+    cancelEditingTask();
+  }
+
   function deleteTask(taskId: string) {
     setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
+
+    if (editingTaskId === taskId) {
+      cancelEditingTask();
+    }
   }
 
   const completedTasks = tasks.filter((task) => task.completed).length;
@@ -349,33 +398,83 @@ export default function Home() {
           <ul className="task-list">
             {visibleTasks.map((task) => {
               const isDueSoon = isDueSoonTask(task, currentDate);
+              const isEditing = editingTaskId === task.id;
 
               return (
                 <li
                   key={task.id}
                   className={`task-card${isDueSoon ? " due-soon" : ""}`}
                 >
-                  <label className="task-content">
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={() => toggleTask(task.id)}
-                    />
-                    <span className={`task-details${task.completed ? " completed" : ""}`}>
-                      {task.subject} — {task.title} (마감일: {task.dueDate},{" "}
-                      <strong className={isDueSoon ? "due-soon-label" : undefined}>
-                        {getDueDateLabel(task.dueDate, currentDate)}
-                      </strong>
-                      )
-                    </span>
-                  </label>
-                  <button
-                    className="delete-button"
-                    type="button"
-                    onClick={() => deleteTask(task.id)}
-                  >
-                    삭제
-                  </button>
+                  {isEditing ? (
+                    <form className="edit-task-form" onSubmit={saveTask}>
+                      <label className="form-field">
+                        과목명
+                        <input
+                          value={editingSubject}
+                          onChange={(event) => setEditingSubject(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <label className="form-field">
+                        과제명
+                        <input
+                          value={editingTitle}
+                          onChange={(event) => setEditingTitle(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <label className="form-field">
+                        마감일
+                        <input
+                          type="date"
+                          value={editingDueDate}
+                          onChange={(event) => setEditingDueDate(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <div className="task-actions">
+                        <button className="save-button" type="submit">
+                          저장
+                        </button>
+                        <button className="cancel-button" type="button" onClick={cancelEditingTask}>
+                          취소
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <label className="task-content">
+                        <input
+                          type="checkbox"
+                          checked={task.completed}
+                          onChange={() => toggleTask(task.id)}
+                        />
+                        <span className={`task-details${task.completed ? " completed" : ""}`}>
+                          {task.subject} — {task.title} (마감일: {task.dueDate},{" "}
+                          <strong className={isDueSoon ? "due-soon-label" : undefined}>
+                            {getDueDateLabel(task.dueDate, currentDate)}
+                          </strong>
+                          )
+                        </span>
+                      </label>
+                      <div className="task-actions">
+                        <button
+                          className="edit-button"
+                          type="button"
+                          onClick={() => startEditingTask(task)}
+                        >
+                          수정
+                        </button>
+                        <button
+                          className="delete-button"
+                          type="button"
+                          onClick={() => deleteTask(task.id)}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </li>
               );
             })}

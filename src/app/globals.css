@@ -268,6 +268,48 @@ h2 {
   color: #27272a;
 }
 
+.task-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.edit-button,
+.cancel-button {
+  padding: 5px 0;
+  border: 0;
+  color: #71717a;
+  background: transparent;
+  font-size: 0.85rem;
+}
+
+.edit-button:hover,
+.cancel-button:hover {
+  color: #27272a;
+}
+
+.edit-task-form {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(120px, 1fr) minmax(170px, 1.5fr) minmax(145px, 0.8fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.save-button {
+  min-height: 40px;
+  padding: 8px 15px;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  color: #fff;
+  background: #27272a;
+  font-weight: 600;
+}
+
+.save-button:hover {
+  background: #3f3f46;
+}
+
 .due-soon {
   border-color: #f1dfbd;
   border-left: 4px solid #d97706;
@@ -343,7 +385,16 @@ h2 {
     padding: 16px;
   }
 
-  .delete-button {
+  .edit-task-form {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .edit-task-form .task-actions {
+    justify-content: flex-end;
+  }
+
+  .task-actions {
     align-self: flex-end;
   }
 }
