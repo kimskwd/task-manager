@@ -23,6 +23,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 main {
   width: min(100%, 880px);
   margin: 0 auto;
@@ -31,6 +36,76 @@ main {
 
 .page-header {
   margin-bottom: 36px;
+}
+
+.page-header-with-account,
+.account-menu {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-menu {
+  align-items: center;
+  color: #71717a;
+  font-size: 0.82rem;
+}
+
+.sign-out-button,
+.auth-switch {
+  border: 0;
+  color: #52525b;
+  background: transparent;
+  font-size: 0.85rem;
+}
+
+.sign-out-button:hover,
+.auth-switch:hover {
+  color: #27272a;
+  text-decoration: underline;
+}
+
+.status-message {
+  margin: -16px 0 20px;
+  padding: 10px 12px;
+  border: 1px solid #f1dfbd;
+  border-radius: 8px;
+  color: #92400e;
+  background: #fffbeb;
+  font-size: 0.86rem;
+}
+
+.auth-panel {
+  display: grid;
+  width: min(100%, 430px);
+  gap: 16px;
+  margin: 64px auto;
+  padding: 28px;
+  border: 1px solid #e6e6e2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(24 24 27 / 3%);
+}
+
+.auth-panel p {
+  color: #71717a;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.auth-panel .status-message {
+  margin: 0;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-switch {
+  justify-self: start;
+  padding: 0;
 }
 
 h1,
@@ -332,6 +407,15 @@ h2 {
 
   .page-header {
     margin-bottom: 28px;
+  }
+
+  .page-header-with-account {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-menu {
+    justify-content: space-between;
   }
 
   .summary-grid {

@@ -1,486 +1,63 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { type User } from "@supabase/supabase-js";
 import { getDueDateLabel, getRemainingDays } from "../lib/due-date";
+import { createClient } from "../lib/supabase/client";
 
-type Task = {
-  id: string;
-  subject: string;
-  title: string;
-  dueDate: string;
-  completed: boolean;
-};
-
-type TaskFilter = "all" | "active" | "completed" | "dueSoon";
-type SortOrder = "ascending" | "descending";
-
-const STORAGE_KEY = "student-task-manager:tasks";
-
-function isTask(value: unknown): value is Task {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const task = value as Record<string, unknown>;
-
-  return (
-    typeof task.id === "string" &&
-    typeof task.subject === "string" &&
-    typeof task.title === "string" &&
-    typeof task.dueDate === "string" &&
-    typeof task.completed === "boolean"
-  );
-}
-
-function parseStoredTasks(value: string | null): Task[] | null {
-  if (value === null) {
-    return [];
-  }
-
-  try {
-    const parsedTasks: unknown = JSON.parse(value);
-
-    if (!Array.isArray(parsedTasks)) {
-      return null;
-    }
-
-    return parsedTasks.filter(isTask);
-  } catch {
-    return null;
-  }
-}
-
-function isDueSoonTask(task: Task, today: Date): boolean {
-  const remainingDays = getRemainingDays(task.dueDate, today);
-
-  return (
-    !task.completed &&
-    remainingDays !== null &&
-    remainingDays >= 0 &&
-    remainingDays <= 3
-  );
-}
-
-function isSortOrder(value: string): value is SortOrder {
-  return value === "ascending" || value === "descending";
-}
+type Task = { id: string; subject: string; title: string; dueDate: string; completed: boolean };
+type TaskRow = { id: string; subject: string; title: string; due_date: string; completed: boolean };
+type Filter = "all" | "active" | "completed" | "dueSoon";
+const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+const mapTask = (row: TaskRow): Task => ({ id: row.id, subject: row.subject, title: row.title, dueDate: row.due_date, completed: row.completed });
 
 export default function Home() {
+  const [user, setUser] = useState<User | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [subject, setSubject] = useState("");
-  const [title, setTitle] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingSubject, setEditingSubject] = useState("");
-  const [editingTitle, setEditingTitle] = useState("");
-  const [editingDueDate, setEditingDueDate] = useState("");
-  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
-  const [isStorageAvailable, setIsStorageAvailable] = useState(false);
-  const [currentDate, setCurrentDate] = useState(() => new Date());
-  const [filter, setFilter] = useState<TaskFilter>("all");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("ascending");
+  const [loading, setLoading] = useState(configured);
+  const [notice, setNotice] = useState("");
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [signUp, setSignUp] = useState(false);
+  const [subject, setSubject] = useState(""); const [title, setTitle] = useState(""); const [dueDate, setDueDate] = useState("");
+  const [filter, setFilter] = useState<Filter>("all"); const [descending, setDescending] = useState(false); const [today, setToday] = useState(() => new Date());
+  const [editing, setEditing] = useState<string | null>(null); const [editingSubject, setEditingSubject] = useState(""); const [editingTitle, setEditingTitle] = useState(""); const [editingDueDate, setEditingDueDate] = useState("");
 
+  async function loadTasks() {
+    const { data, error } = await createClient().from("tasks").select("id, subject, title, due_date, completed").order("due_date");
+    if (error) setNotice(`과제를 불러오지 못했습니다: ${error.message}`); else setTasks((data as TaskRow[]).map(mapTask));
+  }
   useEffect(() => {
-    let loadedTasks: Task[] = [];
-    let canPersistTasks = false;
-    let hasAppliedInitialTasks = false;
-
-    try {
-      const parsedTasks = parseStoredTasks(window.localStorage.getItem(STORAGE_KEY));
-
-      if (parsedTasks !== null) {
-        loadedTasks = parsedTasks;
-        canPersistTasks = true;
-      }
-    } catch {
-      canPersistTasks = false;
-    }
-
-    const loadTimer = window.setTimeout(() => {
-      setTasks(loadedTasks);
-      setHasLoadedTasks(true);
-      setIsStorageAvailable(canPersistTasks);
-      hasAppliedInitialTasks = true;
-    }, 0);
-
-    function handleStorageChange(event: StorageEvent) {
-      if (
-        event.storageArea !== window.localStorage ||
-        (event.key !== STORAGE_KEY && event.key !== null)
-      ) {
-        return;
-      }
-
-      const updatedTasks = parseStoredTasks(event.newValue);
-
-      if (updatedTasks === null) {
-        return;
-      }
-
-      if (hasAppliedInitialTasks) {
-        setTasks(updatedTasks);
-        setIsStorageAvailable(true);
-        return;
-      }
-
-      loadedTasks = updatedTasks;
-    }
-
-    window.addEventListener("storage", handleStorageChange);
-
-    return () => {
-      window.clearTimeout(loadTimer);
-      window.removeEventListener("storage", handleStorageChange);
-    };
+    if (!configured) return;
+    const supabase = createClient(); let live = true;
+    void supabase.auth.getUser().then(async ({ data: { user: currentUser } }) => { if (!live) return; setUser(currentUser); if (currentUser) await loadTasks(); if (live) setLoading(false); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => { setUser(nextSession?.user ?? null); if (!nextSession) setTasks([]); });
+    return () => { live = false; subscription.unsubscribe(); };
   }, []);
+  useEffect(() => { const next = new Date(); next.setHours(24, 0, 1, 0); const timer = window.setTimeout(() => setToday(new Date()), next.getTime() - Date.now()); return () => window.clearTimeout(timer); }, [today]);
 
-  useEffect(() => {
-    if (!hasLoadedTasks || !isStorageAvailable) {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-    } catch {
-      // 저장 공간 부족이나 브라우저 설정으로 인한 저장 실패는 화면 동작에 영향을 주지 않는다.
-    }
-  }, [hasLoadedTasks, isStorageAvailable, tasks]);
-
-  useEffect(() => {
-    const now = new Date();
-    const nextMidnight = new Date(now);
-    nextMidnight.setHours(24, 0, 1, 0);
-    const refreshTimer = window.setTimeout(
-      () => setCurrentDate(new Date()),
-      nextMidnight.getTime() - now.getTime(),
-    );
-
-    return () => window.clearTimeout(refreshTimer);
-  }, [currentDate]);
-
-  function addTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!subject.trim() || !title.trim() || !dueDate) {
-      return;
-    }
-
-    const newTask: Task = {
-      id: crypto.randomUUID(),
-      subject: subject.trim(),
-      title: title.trim(),
-      dueDate,
-      completed: false,
-    };
-
-    setTasks((currentTasks) => [...currentTasks, newTask]);
-    setSubject("");
-    setTitle("");
-    setDueDate("");
+  async function authenticate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setNotice(""); const supabase = createClient();
+    const result = signUp ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/auth/confirm` } }) : await supabase.auth.signInWithPassword({ email, password });
+    if (result.error) return setNotice(`인증에 실패했습니다: ${result.error.message}`);
+    if (signUp && !result.data.session) setNotice("가입 확인 이메일을 보냈습니다. 이메일의 링크를 눌러 계정을 활성화하세요."); else { setPassword(""); await loadTasks(); }
   }
-
-  function toggleTask(taskId: string) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId ? { ...task, completed: !task.completed } : task,
-      ),
-    );
+  async function addTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!user || !subject.trim() || !title.trim() || !dueDate) return;
+    const { data, error } = await createClient().from("tasks").insert({ user_id: user.id, subject: subject.trim(), title: title.trim(), due_date: dueDate }).select("id, subject, title, due_date, completed").single();
+    if (error) return setNotice(`과제를 저장하지 못했습니다: ${error.message}`);
+    setTasks((current) => [...current, mapTask(data as TaskRow)]); setSubject(""); setTitle(""); setDueDate("");
   }
-
-  function startEditingTask(task: Task) {
-    setEditingTaskId(task.id);
-    setEditingSubject(task.subject);
-    setEditingTitle(task.title);
-    setEditingDueDate(task.dueDate);
+  async function updateTask(id: string, changes: Partial<Task>) {
+    const updates = { ...(changes.subject !== undefined && { subject: changes.subject }), ...(changes.title !== undefined && { title: changes.title }), ...(changes.dueDate !== undefined && { due_date: changes.dueDate }), ...(changes.completed !== undefined && { completed: changes.completed }) };
+    const { data, error } = await createClient().from("tasks").update(updates).eq("id", id).select("id, subject, title, due_date, completed").single();
+    if (error) return setNotice(`과제를 수정하지 못했습니다: ${error.message}`);
+    setTasks((current) => current.map((task) => task.id === id ? mapTask(data as TaskRow) : task));
   }
-
-  function cancelEditingTask() {
-    setEditingTaskId(null);
-    setEditingSubject("");
-    setEditingTitle("");
-    setEditingDueDate("");
-  }
-
-  function saveTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (
-      editingTaskId === null ||
-      !editingSubject.trim() ||
-      !editingTitle.trim() ||
-      !editingDueDate
-    ) {
-      return;
-    }
-
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === editingTaskId
-          ? {
-              ...task,
-              subject: editingSubject.trim(),
-              title: editingTitle.trim(),
-              dueDate: editingDueDate,
-            }
-          : task,
-      ),
-    );
-    cancelEditingTask();
-  }
-
-  function deleteTask(taskId: string) {
-    setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
-
-    if (editingTaskId === taskId) {
-      cancelEditingTask();
-    }
-  }
-
-  const completedTasks = tasks.filter((task) => task.completed).length;
-  const dueSoonTasks = tasks.filter((task) => isDueSoonTask(task, currentDate)).length;
-  const visibleTasks = tasks
-    .filter((task) => {
-      if (filter === "active") {
-        return !task.completed;
-      }
-
-      if (filter === "completed") {
-        return task.completed;
-      }
-
-      if (filter === "dueSoon") {
-        return isDueSoonTask(task, currentDate);
-      }
-
-      return true;
-    })
-    .sort((firstTask, secondTask) => {
-      const firstDays = getRemainingDays(firstTask.dueDate, currentDate);
-      const secondDays = getRemainingDays(secondTask.dueDate, currentDate);
-
-      if (firstDays === null && secondDays === null) {
-        return 0;
-      }
-
-      if (firstDays === null) {
-        return 1;
-      }
-
-      if (secondDays === null) {
-        return -1;
-      }
-
-      return sortOrder === "ascending"
-        ? firstDays - secondDays
-        : secondDays - firstDays;
-    });
-
-  return (
-    <main>
-      <header className="page-header">
-        <h1>과제 관리</h1>
-        <p>해야 할 일을 한곳에서 정리하세요.</p>
-      </header>
-
-      <section className="summary-grid" aria-label="과제 현황 요약">
-        <article className="summary-card">
-          <span>전체 과제</span>
-          <strong>{hasLoadedTasks ? tasks.length : "—"}</strong>
-        </article>
-        <article className="summary-card">
-          <span>완료</span>
-          <strong>{hasLoadedTasks ? completedTasks : "—"}</strong>
-        </article>
-        <article className="summary-card">
-          <span>진행중</span>
-          <strong>{hasLoadedTasks ? tasks.length - completedTasks : "—"}</strong>
-        </article>
-        <article className="summary-card summary-card-alert">
-          <span>마감 임박</span>
-          <strong>{hasLoadedTasks ? dueSoonTasks : "—"}</strong>
-        </article>
-      </section>
-
-      <form className="task-form" onSubmit={addTask}>
-        <label className="form-field">
-          과목명
-          <input
-            value={subject}
-            onChange={(event) => setSubject(event.target.value)}
-            placeholder="예: 웹 프로그래밍"
-            required
-          />
-        </label>
-        <label className="form-field">
-          과제명
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="예: 개인 홈페이지 만들기"
-            required
-          />
-        </label>
-        <label className="form-field">
-          마감일
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(event) => setDueDate(event.target.value)}
-            required
-          />
-        </label>
-        <button className="add-button" type="submit">
-          과제 추가
-        </button>
-      </form>
-
-      <section className="task-section" aria-labelledby="task-list-heading">
-        <div className="task-list-header">
-          <h2 id="task-list-heading">과제 목록</h2>
-          <div className="task-toolbar">
-            <div className="filter-group" aria-label="과제 필터">
-              <button
-                className={`filter-button${filter === "all" ? " active" : ""}`}
-                type="button"
-                aria-pressed={filter === "all"}
-                onClick={() => setFilter("all")}
-              >
-                전체
-              </button>
-              <button
-                className={`filter-button${filter === "active" ? " active" : ""}`}
-                type="button"
-                aria-pressed={filter === "active"}
-                onClick={() => setFilter("active")}
-              >
-                진행 중
-              </button>
-              <button
-                className={`filter-button${filter === "completed" ? " active" : ""}`}
-                type="button"
-                aria-pressed={filter === "completed"}
-                onClick={() => setFilter("completed")}
-              >
-                완료
-              </button>
-              <button
-                className={`filter-button${filter === "dueSoon" ? " active" : ""}`}
-                type="button"
-                aria-pressed={filter === "dueSoon"}
-                onClick={() => setFilter("dueSoon")}
-              >
-                마감 임박
-              </button>
-            </div>
-            <label className="sort-control">
-              <span>정렬</span>
-              <select
-                value={sortOrder}
-                onChange={(event) => {
-                  if (isSortOrder(event.target.value)) {
-                    setSortOrder(event.target.value);
-                  }
-                }}
-              >
-                <option value="ascending">마감일 빠른 순</option>
-                <option value="descending">마감일 늦은 순</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        {!hasLoadedTasks ? (
-          <p>과제를 불러오는 중입니다.</p>
-        ) : tasks.length === 0 ? (
-          <p>등록된 과제가 없습니다.</p>
-        ) : visibleTasks.length === 0 ? (
-          <p>선택한 조건에 맞는 과제가 없습니다.</p>
-        ) : (
-          <ul className="task-list">
-            {visibleTasks.map((task) => {
-              const isDueSoon = isDueSoonTask(task, currentDate);
-              const isEditing = editingTaskId === task.id;
-
-              return (
-                <li
-                  key={task.id}
-                  className={`task-card${isDueSoon ? " due-soon" : ""}`}
-                >
-                  {isEditing ? (
-                    <form className="edit-task-form" onSubmit={saveTask}>
-                      <label className="form-field">
-                        과목명
-                        <input
-                          value={editingSubject}
-                          onChange={(event) => setEditingSubject(event.target.value)}
-                          required
-                        />
-                      </label>
-                      <label className="form-field">
-                        과제명
-                        <input
-                          value={editingTitle}
-                          onChange={(event) => setEditingTitle(event.target.value)}
-                          required
-                        />
-                      </label>
-                      <label className="form-field">
-                        마감일
-                        <input
-                          type="date"
-                          value={editingDueDate}
-                          onChange={(event) => setEditingDueDate(event.target.value)}
-                          required
-                        />
-                      </label>
-                      <div className="task-actions">
-                        <button className="save-button" type="submit">
-                          저장
-                        </button>
-                        <button className="cancel-button" type="button" onClick={cancelEditingTask}>
-                          취소
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <>
-                      <label className="task-content">
-                        <input
-                          type="checkbox"
-                          checked={task.completed}
-                          onChange={() => toggleTask(task.id)}
-                        />
-                        <span className={`task-details${task.completed ? " completed" : ""}`}>
-                          {task.subject} — {task.title} (마감일: {task.dueDate},{" "}
-                          <strong className={isDueSoon ? "due-soon-label" : undefined}>
-                            {getDueDateLabel(task.dueDate, currentDate)}
-                          </strong>
-                          )
-                        </span>
-                      </label>
-                      <div className="task-actions">
-                        <button
-                          className="edit-button"
-                          type="button"
-                          onClick={() => startEditingTask(task)}
-                        >
-                          수정
-                        </button>
-                        <button
-                          className="delete-button"
-                          type="button"
-                          onClick={() => deleteTask(task.id)}
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-    </main>
-  );
+  async function removeTask(id: string) { const { error } = await createClient().from("tasks").delete().eq("id", id); if (error) return setNotice(`과제를 삭제하지 못했습니다: ${error.message}`); setTasks((current) => current.filter((task) => task.id !== id)); }
+  const dueSoon = (task: Task) => { const days = getRemainingDays(task.dueDate, today); return !task.completed && days !== null && days >= 0 && days <= 3; };
+  const shown = tasks.filter((task) => filter === "all" || (filter === "active" && !task.completed) || (filter === "completed" && task.completed) || (filter === "dueSoon" && dueSoon(task))).sort((a, b) => { const order = (getRemainingDays(a.dueDate, today) ?? Infinity) - (getRemainingDays(b.dueDate, today) ?? Infinity); return descending ? -order : order; });
+  if (!configured) return <main><section className="auth-panel"><h1>Supabase 연결이 필요합니다</h1><p><code>.env.local</code>에 URL과 Publishable key를 설정하세요.</p><p><code>SUPABASE_SETUP.md</code>의 DB·권한 설정도 완료해야 합니다.</p></section></main>;
+  if (loading) return <main><p>계정을 확인하는 중입니다.</p></main>;
+  if (!user) return <main><section className="auth-panel"><h1>{signUp ? "계정 만들기" : "로그인"}</h1><p>나만의 과제 목록을 저장하고 어느 기기에서나 확인하세요.</p>{notice && <p className="status-message">{notice}</p>}<form className="auth-form" onSubmit={(event) => void authenticate(event)}><label className="form-field">이메일<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label className="form-field">비밀번호<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} required /></label><button className="add-button" type="submit">{signUp ? "가입하기" : "로그인"}</button></form><button className="auth-switch" type="button" onClick={() => setSignUp((value) => !value)}>{signUp ? "이미 계정이 있나요? 로그인" : "처음이신가요? 계정 만들기"}</button></section></main>;
+  const completed = tasks.filter((task) => task.completed).length;
+  return <main><header className="page-header page-header-with-account"><div><h1>과제 관리</h1><p>로그인한 계정의 과제만 안전하게 저장됩니다.</p></div><div className="account-menu"><span>{user.email}</span><button className="sign-out-button" type="button" onClick={() => void createClient().auth.signOut()}>로그아웃</button></div></header>{notice && <p className="status-message">{notice}</p>}<section className="summary-grid">{[["전체 과제", tasks.length], ["완료", completed], ["진행중", tasks.length - completed], ["마감 임박", tasks.filter(dueSoon).length]].map(([name, count], index) => <article className={`summary-card${index === 3 ? " summary-card-alert" : ""}`} key={name as string}><span>{name}</span><strong>{count}</strong></article>)}</section><form className="task-form" onSubmit={(event) => void addTask(event)}><label className="form-field">과목명<input value={subject} onChange={(event) => setSubject(event.target.value)} required /></label><label className="form-field">과제명<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label className="form-field">마감일<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} required /></label><button className="add-button" type="submit">과제 추가</button></form><section className="task-section"><div className="task-list-header"><h2>과제 목록</h2><div className="task-toolbar"><div className="filter-group">{([ ["all", "전체"], ["active", "진행 중"], ["completed", "완료"], ["dueSoon", "마감 임박"] ] as const).map(([value, name]) => <button key={value} className={`filter-button${filter === value ? " active" : ""}`} type="button" onClick={() => setFilter(value)}>{name}</button>)}</div><button className="filter-button" type="button" onClick={() => setDescending((value) => !value)}>마감일 {descending ? "늦은" : "빠른"} 순</button></div></div>{tasks.length === 0 ? <p>등록된 과제가 없습니다.</p> : shown.length === 0 ? <p>선택한 조건에 맞는 과제가 없습니다.</p> : <ul className="task-list">{shown.map((task) => <li className={`task-card${dueSoon(task) ? " due-soon" : ""}`} key={task.id}>{editing === task.id ? <form className="edit-task-form" onSubmit={(event) => { event.preventDefault(); void updateTask(task.id, { subject: editingSubject, title: editingTitle, dueDate: editingDueDate }); setEditing(null); }}><label className="form-field">과목명<input value={editingSubject} onChange={(event) => setEditingSubject(event.target.value)} required /></label><label className="form-field">과제명<input value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} required /></label><label className="form-field">마감일<input type="date" value={editingDueDate} onChange={(event) => setEditingDueDate(event.target.value)} required /></label><div className="task-actions"><button className="save-button">저장</button><button className="cancel-button" type="button" onClick={() => setEditing(null)}>취소</button></div></form> : <><label className="task-content"><input type="checkbox" checked={task.completed} onChange={() => void updateTask(task.id, { completed: !task.completed })} /><span className={`task-details${task.completed ? " completed" : ""}`}>{task.subject} — {task.title} (마감일: {task.dueDate}, <strong className={dueSoon(task) ? "due-soon-label" : undefined}>{getDueDateLabel(task.dueDate, today)}</strong>)</span></label><div className="task-actions"><button className="edit-button" type="button" onClick={() => { setEditing(task.id); setEditingSubject(task.subject); setEditingTitle(task.title); setEditingDueDate(task.dueDate); }}>수정</button><button className="delete-button" type="button" onClick={() => void removeTask(task.id)}>삭제</button></div></>}</li>)}</ul>}</section></main>;
 }
